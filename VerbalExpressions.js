@@ -58,7 +58,11 @@ window.VerbalExpression = (function(){
         _suffixes : "",
         _modifiers : "gm", // default to global multiline matching
         
-        
+        // Variables for keeping track of capture groups
+        _currGroup : 0,
+        _groupNumbers : {},
+        _groupStack : [],
+         
         // Sanitation function for adding
         // anything safely to the expression
         sanitize : function( value ) {
@@ -132,7 +136,7 @@ window.VerbalExpression = (function(){
 
         // Any character at least one time
         something : function() {
-            this.add( "(:?.+)" );
+            this.add( "(?:.+)" );
             return( this );
         },
 
@@ -159,7 +163,7 @@ window.VerbalExpression = (function(){
         
         // Line break
         lineBreak : function() {
-            this.add( "(?:(?:\\n)|(?:\\r\\n))" ); // Unix + windows CLRF
+            this.add( "(?:(?:\\n)|(?:\\r\\n))" ); // Unix + windows CRLF
             return( this );
         },
         // And a shorthand for html-minded
@@ -296,7 +300,31 @@ window.VerbalExpression = (function(){
         },
 
         //starts a capturing group
-        beginCapture : function() {
+        beginCapture : function( group ) {
+            
+            // _currGroup should equal the group number (the index into the
+            // array result of regexp.exec())
+            this._currGroup++;
+            
+            // if "group" is present, (1) if it's an integer it must be 
+            // the correct group number, (2) otherwise it's a group name
+            // that can later be converted to a number with groupNumberFor()
+            if ( group === undefined ) {
+                this._groupStack.push( this._currGroup );
+            }
+            else if ( /^\d+$/.test( group )) {
+                if ( group != this._currGroup ) 
+                    throw {name: "VerbalExpressionError",
+                          message: "Wrong group number in beginCapture: " + group};
+                this._groupStack.push( group );
+            } else {
+                if ( this._groupNumbers.hasOwnProperty( group )) 
+                    throw {name: "VerbalExpressionError", 
+                           message: "Group name defined twice: " + group};
+                this._groupNumbers[group] = this._currGroup;
+                this._groupStack.push( group );
+            }
+            
             //add the end of the capture group to the suffixes for now so compilation continues to work
             this._suffixes += ")";
             this.add( "(", false );
@@ -305,14 +333,29 @@ window.VerbalExpression = (function(){
         },
 
         //ends a capturing group
-        endCapture : function() {
-						//remove the last parentheses from the _suffixes and add to the regex itself
+        endCapture : function( group ) {
+            // make sure group matches corresponding beginCapture group
+            // name, if present
+            if ( this._groupStack.length === 0 ) 
+                throw {name: "VerbalExpressionError",
+                       message: "endCapture does not have corresponding beginCapture"};
+            var _latestGroup = this._groupStack.pop();
+            if ( group !== undefined && group !== _latestGroup ) 
+                throw {name: "VerbalExpressionError", 
+                       message: "Mismatched group name in endCapture: " + group};
+            
+            //remove the last parentheses from the _suffixes and add to the regex itself
             this._suffixes = this._suffixes.substring(0, this._suffixes.length - 1 );
             this.add( ")", true );
             
             return( this );
-        }
+        },
         
+        groupNumberFor : function( group ) {
+            // return group number set in beginCapture()
+            return( this._groupNumbers[group] );    
+        }
+
     };
  
  
